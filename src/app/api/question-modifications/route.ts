@@ -1,61 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const EDGE_FUNCTION_URL = process.env.NEXT_PUBLIC_EDGE_FUNCTION_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Temporary in-memory storage for development
+// TODO: Replace with actual Supabase integration when credentials are configured
+let mockStorage: Array<{
+  id: number
+  question_id: number
+  correct_answers: string[]
+  options: any[]
+  created_at: string
+  updated_at: string
+}> = []
 
-async function callEdgeFunction(endpoint: string, options: RequestInit = {}) {
-  const url = `${EDGE_FUNCTION_URL}/question-modifications${endpoint}`
-  
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-      ...options.headers,
-    },
-  })
-
-  return response
-}
+let nextId = 1
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const questionId = searchParams.get('questionId')
     
-    let endpoint = ''
     if (questionId) {
       // Get specific question modification
-      endpoint = `/${questionId}`
+      const modification = mockStorage.find(m => m.question_id === parseInt(questionId))
       
-      const response = await callEdgeFunction(endpoint, {
-        method: 'GET',
-      })
-
-      if (response.status === 404) {
+      if (!modification) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 })
       }
 
-      const data = await response.json()
-      
-      if (!response.ok) {
-        throw new Error(data.message || 'Edge function request failed')
-      }
-
-      return NextResponse.json(data, { status: response.status })
+      return NextResponse.json(modification)
     } else {
       // Get all modifications
-      const response = await callEdgeFunction('', {
-        method: 'GET',
-      })
-
-      const data = await response.json()
-      
-      if (!response.ok) {
-        throw new Error(data.message || 'Edge function request failed')
-      }
-
-      return NextResponse.json(data, { status: response.status })
+      return NextResponse.json(mockStorage)
     }
   } catch (error) {
     console.error('API route error:', error)
@@ -73,18 +47,29 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const response = await callEdgeFunction('', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
-
-    const data = await response.json()
+    // Find existing modification or create new one
+    const existingIndex = mockStorage.findIndex(m => m.question_id === body.question_id)
     
-    if (!response.ok) {
-      throw new Error(data.message || 'Edge function request failed')
+    const modification = {
+      id: existingIndex >= 0 ? mockStorage[existingIndex].id : nextId++,
+      question_id: body.question_id,
+      correct_answers: body.correct_answers,
+      options: body.options,
+      created_at: existingIndex >= 0 ? mockStorage[existingIndex].created_at : new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+    
+    if (existingIndex >= 0) {
+      mockStorage[existingIndex] = modification
+    } else {
+      mockStorage.push(modification)
     }
 
-    return NextResponse.json(data, { status: response.status })
+    return NextResponse.json({ 
+      success: true, 
+      data: modification,
+      message: 'Question modification saved successfully (mock storage)'
+    })
   } catch (error) {
     console.error('API route error:', error)
     return NextResponse.json(
@@ -102,23 +87,28 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const questionId = searchParams.get('questionId')
     
-    const endpoint = questionId ? `/${questionId}` : ''
-    
-    const response = await callEdgeFunction(endpoint, {
-      method: 'DELETE',
-    })
+    if (questionId) {
+      // Delete specific modification
+      const index = mockStorage.findIndex(m => m.question_id === parseInt(questionId))
+      
+      if (index >= 0) {
+        mockStorage.splice(index, 1)
+      }
 
-    if (response.status === 404) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Question modification deleted successfully (mock storage)'
+      })
+    } else {
+      // Delete all modifications
+      mockStorage = []
+      nextId = 1
+
+      return NextResponse.json({ 
+        success: true, 
+        message: 'All question modifications cleared successfully (mock storage)'
+      })
     }
-
-    const data = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Edge function request failed')
-    }
-
-    return NextResponse.json(data, { status: response.status })
   } catch (error) {
     console.error('API route error:', error)
     return NextResponse.json(

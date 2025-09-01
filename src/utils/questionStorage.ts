@@ -258,14 +258,14 @@ export class QuestionStorageManager {
       return {
         totalModifications: modificationCount,
         lastModified,
-        storageType: 'API Proxy to Edge Functions'
+        storageType: 'Mock Storage (Development)'
       }
     } catch (error) {
       console.error('Error getting statistics via API proxy:', error)
       return {
         totalModifications: 0,
         lastModified: null,
-        storageType: 'API Proxy (Error)'
+        storageType: 'Mock Storage (Error)'
       }
     }
   }

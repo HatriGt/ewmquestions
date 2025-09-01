@@ -167,8 +167,8 @@ export default function AdminPage() {
       setEditingQuestion(null)
       
       // Show success message
-      console.log('Question updated successfully and saved via Edge Functions')
-      alert('Question saved successfully! Changes are now persistent in the database via Edge Functions.')
+      console.log('Question updated successfully and saved to mock storage')
+      alert('Question saved successfully! Changes are stored temporarily in mock storage. Configure Supabase for persistence.')
     } catch (error) {
       console.error('Failed to save question:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -408,7 +408,7 @@ export default function AdminPage() {
               <CardContent className="pt-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                   <div>
-                    <strong>Storage Status:</strong> Edge Functions (CORS-Free)
+                    <strong>Storage Status:</strong> Mock Storage (Development)
                   </div>
                   <div>
                     <strong>Modifications:</strong> {modifications.size}
