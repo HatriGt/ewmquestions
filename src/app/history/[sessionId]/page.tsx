@@ -18,7 +18,6 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { 
-  Home, 
   ArrowLeft,
   ArrowRight,
   Calendar,
@@ -31,7 +30,6 @@ import {
   BookOpen,
   Award,
   TrendingUp,
-  Activity,
   Eye,
   EyeOff,
   RotateCcw,

@@ -510,18 +510,23 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
   // Save exam history when session completes
   useEffect(() => {
     if (state.session?.results && state.session.mode === 'exam') {
+      // Use state values directly within the effect to avoid dependency issues
+      const currentQuestions = state.questions.current
+      const currentAnswers = state.answers.submitted
+      
       saveExamHistory({
         sessionId: state.session.id,
         date: state.session.endTime || new Date(),
         configuration: state.session.configuration,
         results: state.session.results,
-        questions: state.questions.current,
-        userAnswers: state.answers.submitted,
+        questions: currentQuestions,
+        userAnswers: currentAnswers,
         duration: Math.floor((new Date().getTime() - state.session.startTime.getTime()) / 1000),
         mode: state.session.mode
       })
     }
-  }, [state.session?.results, state.session?.id, state.session?.configuration, state.session?.endTime, state.session?.mode, state.session?.startTime, state.questions.current, state.answers.submitted])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.session?.results, state.session?.id, state.session?.configuration, state.session?.endTime, state.session?.mode, state.session?.startTime])
   
   // Load questions on mount
   useEffect(() => {

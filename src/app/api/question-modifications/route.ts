@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { QuestionOption } from '@/types/questions'
 
 // Temporary in-memory storage for development
 // TODO: Replace with actual Supabase integration when credentials are configured
@@ -6,7 +7,7 @@ let mockStorage: Array<{
   id: number
   question_id: number
   correct_answers: string[]
-  options: any[]
+  options: QuestionOption[]
   created_at: string
   updated_at: string
 }> = []
