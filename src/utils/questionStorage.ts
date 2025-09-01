@@ -4,6 +4,18 @@ import { QuestionModificationRow, QuestionModificationInsert } from '@/lib/supab
 // Edge Function base URL
 const EDGE_FUNCTION_BASE_URL = 'https://tftiznxajayvfripufdy.supabase.co/functions/v1/-question-modifications-proxy'
 
+// Get Supabase anon key for authentication
+const getSupabaseAnonKey = () => {
+  // Import the anon key from the supabase config
+  try {
+    // This will work in the browser since it's a NEXT_PUBLIC variable
+    return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  } catch (error) {
+    console.warn('Could not get Supabase anon key:', error)
+    return undefined
+  }
+}
+
 interface QuestionModification {
   questionId: number
   correctAnswers: string[]
