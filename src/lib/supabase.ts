@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { QuestionOption } from '@/types/questions'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -14,10 +15,19 @@ export interface QuestionModificationRow {
   id?: number
   question_id: number
   correct_answers: string[]
-  options: any[] // JSON field
+  options: QuestionOption[] // Properly typed JSON field
   created_at?: string
   updated_at?: string
 }
 
-export interface QuestionModificationInsert extends Omit<QuestionModificationRow, 'id' | 'created_at' | 'updated_at'> {}
-export interface QuestionModificationUpdate extends Partial<QuestionModificationInsert> {}
+export interface QuestionModificationInsert {
+  question_id: number
+  correct_answers: string[]
+  options: QuestionOption[]
+}
+
+export interface QuestionModificationUpdate {
+  question_id?: number
+  correct_answers?: string[]
+  options?: QuestionOption[]
+}

@@ -89,6 +89,8 @@ export default function AdminPage() {
         
       } catch (error) {
         console.error('Failed to load questions:', error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.log('Error details:', errorMessage)
       } finally {
         setLoading(false)
       }
@@ -169,7 +171,8 @@ export default function AdminPage() {
       alert('Question saved successfully! Changes are now persistent in the database.')
     } catch (error) {
       console.error('Failed to save question:', error)
-      alert('Failed to save question. Please try again.')
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      alert('Failed to save question: ' + errorMessage)
     } finally {
       setSaving(false)
     }
@@ -213,7 +216,8 @@ export default function AdminPage() {
       URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Failed to export modifications:', error)
-      alert('Failed to export modifications')
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      alert('Failed to export modifications: ' + errorMessage)
     }
   }
 
@@ -237,7 +241,8 @@ export default function AdminPage() {
         }
       } catch (error) {
         console.error('Failed to import modifications:', error)
-        alert('Failed to import modifications')
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        alert('Failed to import modifications: ' + errorMessage)
       }
     }
     input.click()
@@ -265,7 +270,8 @@ export default function AdminPage() {
       alert(`Supabase connection successful! Storage type: ${stats.storageType}. Check console for details.`)
     } catch (error) {
       console.error('Supabase test failed:', error)
-      alert('Supabase test failed: ' + error.message)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      alert('Supabase test failed: ' + errorMessage)
     }
   }
 
