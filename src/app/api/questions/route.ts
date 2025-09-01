@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { parseQuestionsFromMarkdown } from '@/utils/questionParser'
 import fs from 'fs'
 import path from 'path'
@@ -15,7 +15,8 @@ export async function GET() {
     return NextResponse.json({
       questions,
       topics,
-      totalQuestions: questions.length
+      totalQuestions: questions.length,
+      enableClientStorage: true // Flag to enable client-side modifications
     })
   } catch (error) {
     console.error('Error loading questions:', error)

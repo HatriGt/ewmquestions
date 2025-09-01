@@ -16,7 +16,6 @@ import {
   ArrowRight, 
   CheckCircle, 
   XCircle, 
-  Clock,
   BookOpen,
   Home,
   RotateCcw,
@@ -26,7 +25,7 @@ import {
 } from 'lucide-react'
 
 export default function PracticePage() {
-  const { state, answerQuestion, submitAnswer, nextQuestion, previousQuestion, finishSession, resetSession, endExamEarly } = usePractice()
+  const { state, answerQuestion, submitAnswer, nextQuestion, previousQuestion, finishSession, endExamEarly } = usePractice()
   const router = useRouter()
 
   // Redirect if no session
@@ -195,7 +194,7 @@ export default function PracticePage() {
                 {isMultiSelect ? (
                   // Multi-select with checkboxes
                   <div className="space-y-3">
-                    {currentQuestion.options.map((option, index) => {
+                    {currentQuestion.options.map((option) => {
                       const isSelected = state.answers.current.includes(option.id)
                       const isCorrect = option.isCorrect
                       const showFeedback = isAnswered && state.session?.configuration.showFeedback

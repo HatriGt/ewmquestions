@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -16,9 +16,13 @@ import {
   X, 
   Search,
   CheckCircle,
-  XCircle
+  XCircle,
+  Download,
+  Upload,
+  RotateCcw
 } from 'lucide-react'
 import { Question, TopicInfo } from '@/types/questions'
+import { questionStorage, applyQuestionModifications, saveQuestionModification, isQuestionModified } from '@/utils/questionStorage'
 
 export default function AdminPage() {
   const router = useRouter()
@@ -30,6 +34,7 @@ export default function AdminPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [saving, setSaving] = useState(false)
+  const [modifications, setModifications] = useState<Set<number>>(new Set())
   
   const questionsPerPage = 10
 
@@ -39,8 +44,23 @@ export default function AdminPage() {
       try {
         const response = await fetch('/api/questions')
         const data = await response.json()
-        setQuestions(data.questions || [])
-        setTopics([{ name: 'all', questionCount: data.questions?.length || 0 }, ...(data.topics || [])])
+        
+        // Apply any existing modifications from storage
+        const rawQuestions = data.questions || []
+        const modifiedQuestions = applyQuestionModifications(rawQuestions)
+        
+        setQuestions(modifiedQuestions)
+        setTopics([{ name: 'all', questionCount: modifiedQuestions.length || 0 }, ...(data.topics || [])])
+        
+        // Track which questions have been modified
+        const modifiedIds = new Set<number>()
+        rawQuestions.forEach((q: Question) => {
+          if (isQuestionModified(q.id)) {
+            modifiedIds.add(q.id)
+          }
+        })
+        setModifications(modifiedIds)
+        
       } catch (error) {
         console.error('Failed to load questions:', error)
       } finally {
@@ -83,18 +103,27 @@ export default function AdminPage() {
         body: JSON.stringify(editingQuestion),
       })
       
+      const result = await response.json()
+      
       if (!response.ok) {
-        throw new Error('Failed to save question')
+        throw new Error(result.error || 'Failed to save question')
       }
+      
+      // Save to client-side storage
+      saveQuestionModification(editingQuestion)
       
       // Update local state
       setQuestions(prev => 
         prev.map(q => q.id === editingQuestion.id ? editingQuestion : q)
       )
+      
+      // Track modification
+      setModifications(prev => new Set(prev.add(editingQuestion.id)))
+      
       setEditingQuestion(null)
       
-      // Show success message (you could add a toast here)
-      console.log('Question updated successfully')
+      // Show success message
+      console.log('Question updated successfully and saved to local storage')
     } catch (error) {
       console.error('Failed to save question:', error)
       alert('Failed to save question. Please try again.')
@@ -125,6 +154,57 @@ export default function AdminPage() {
         correctAnswers
       }
     })
+  }
+
+  const handleExportModifications = () => {
+    try {
+      const exportData = questionStorage.exportModifications()
+      const blob = new Blob([exportData], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `question-modifications-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to export modifications:', error)
+      alert('Failed to export modifications')
+    }
+  }
+
+  const handleImportModifications = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      
+      try {
+        const text = await file.text()
+        const success = questionStorage.importModifications(text)
+        
+        if (success) {
+          // Reload data with new modifications
+          window.location.reload()
+        } else {
+          alert('Failed to import modifications. Please check the file format.')
+        }
+      } catch (error) {
+        console.error('Failed to import modifications:', error)
+        alert('Failed to import modifications')
+      }
+    }
+    input.click()
+  }
+
+  const handleResetModifications = () => {
+    if (confirm('Are you sure you want to reset all modifications? This action cannot be undone.')) {
+      questionStorage.clearModifications()
+      window.location.reload()
+    }
   }
 
   if (loading) {
@@ -160,9 +240,51 @@ export default function AdminPage() {
               </div>
             </div>
             
-            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-              {filteredQuestions.length} Questions
-            </Badge>
+            <div className="flex items-center gap-4">
+              <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                {filteredQuestions.length} Questions
+              </Badge>
+              
+              {modifications.size > 0 && (
+                <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300">
+                  {modifications.size} Modified
+                </Badge>
+              )}
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportModifications}
+                  className="hover:bg-green-50"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleImportModifications}
+                  className="hover:bg-blue-50"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import
+                </Button>
+                
+                {modifications.size > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetModifications}
+                    className="hover:bg-red-50 text-red-600 border-red-300"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Reset
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -208,13 +330,18 @@ export default function AdminPage() {
             <Card key={question.id} className="glass-card">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex items-center gap-2">
                     <Badge variant="outline" className="mb-2">
                       Question {question.questionNumber}
                     </Badge>
                     <Badge variant="secondary" className="ml-2">
                       {question.topic}
                     </Badge>
+                    {modifications.has(question.id) && (
+                      <Badge variant="default" className="ml-2 bg-orange-100 text-orange-800 border-orange-300">
+                        Modified
+                      </Badge>
+                    )}
                   </div>
                   <Button
                     variant="outline"

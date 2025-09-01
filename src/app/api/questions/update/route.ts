@@ -1,25 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Question } from '@/types/questions'
-import fs from 'fs'
-import path from 'path'
 
 export async function PUT(request: NextRequest) {
   try {
     const question: Question = await request.json()
     
-    // In a real application, you would save to a database
-    // For this demo, we'll just return success
-    // You could implement file-based storage here if needed
+    // Validate question data
+    if (!question.id || !question.options || !question.correctAnswers) {
+      return NextResponse.json(
+        { error: 'Invalid question data' },
+        { status: 400 }
+      )
+    }
     
     console.log('Saving question:', question.id, question.correctAnswers)
     
     // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await new Promise(resolve => setTimeout(resolve, 300))
     
+    // Return success response with modification flag for client-side storage
     return NextResponse.json({
       success: true,
       message: 'Question updated successfully',
-      questionId: question.id
+      questionId: question.id,
+      useClientStorage: true, // Flag for client to save to localStorage
+      modification: {
+        questionId: question.id,
+        correctAnswers: question.correctAnswers,
+        options: question.options,
+        timestamp: new Date().toISOString()
+      }
     })
   } catch (error) {
     console.error('Error saving question:', error)

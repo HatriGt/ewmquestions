@@ -7,10 +7,10 @@ import {
   PracticeAction, 
   SessionConfiguration,
   PracticeSession,
-  TopicInfo,
   QuestionResult,
   SessionResults,
-  ExamHistory
+  ExamHistory,
+  TopicResult
 } from '@/types/questions'
 import { loadQuestionsFromFile } from '@/utils/questionParser'
 
@@ -409,7 +409,7 @@ function calculateResults(questionResults: QuestionResult[], questions: Question
     acc[topicName].score = Math.round((acc[topicName].correctAnswers / acc[topicName].totalQuestions) * 100)
     
     return acc
-  }, {} as Record<string, any>)
+  }, {} as Record<string, TopicResult>)
   
   return {
     totalQuestions,
@@ -505,7 +505,7 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
         clearInterval(timerRef.current)
       }
     }
-  }, [state.session?.timer.isActive, state.session?.timer.timeRemaining])
+  }, [state.session?.timer.isActive, state.session?.timer.timeRemaining, state.session])
   
   // Save exam history when session completes
   useEffect(() => {
@@ -521,14 +521,14 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
         mode: state.session.mode
       })
     }
-  }, [state.session?.results])
+  }, [state.session?.results, state.session?.id, state.session?.configuration, state.session?.endTime, state.session?.mode, state.session?.startTime, state.questions.current, state.answers.submitted])
   
   // Load questions on mount
   useEffect(() => {
     async function loadQuestions() {
       dispatch({ type: 'SET_LOADING', payload: true })
       try {
-        const { questions, topics } = await loadQuestionsFromFile()
+        await loadQuestionsFromFile()
         // Update state with loaded topics
         dispatch({ 
           type: 'RESET_SESSION' // This will be updated to handle topics
@@ -626,3 +626,6 @@ export function usePractice() {
   }
   return context
 }
+
+// Export types for external use
+export type { ExamHistory } from '@/types/questions'

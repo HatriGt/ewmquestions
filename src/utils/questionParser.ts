@@ -1,6 +1,4 @@
 import { Question, QuestionOption, TopicInfo } from '@/types/questions'
-import fs from 'fs'
-import path from 'path'
 
 // Parse the markdown questions file and extract structured data
 export function parseQuestionsFromMarkdown(markdownContent: string): { questions: Question[], topics: TopicInfo[] } {
@@ -127,7 +125,23 @@ export async function loadQuestionsFromFile(): Promise<{ questions: Question[], 
     if (!response.ok) {
       throw new Error('Failed to load questions')
     }
-    return await response.json()
+    
+    const data = await response.json()
+    
+    // Apply client-side modifications if available
+    if (typeof window !== 'undefined' && data.enableClientStorage) {
+      const { applyQuestionModifications } = await import('./questionStorage')
+      const modifiedQuestions = applyQuestionModifications(data.questions)
+      return {
+        questions: modifiedQuestions,
+        topics: data.topics
+      }
+    }
+    
+    return {
+      questions: data.questions,
+      topics: data.topics
+    }
   } catch (error) {
     console.error('Error loading questions:', error)
     return { questions: sampleQuestions, topics: [] }

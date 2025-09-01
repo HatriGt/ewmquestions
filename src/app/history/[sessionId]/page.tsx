@@ -8,8 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -28,7 +27,6 @@ import {
   XCircle,
   Target,
   Trophy,
-  Filter,
   Search,
   BookOpen,
   Award,
@@ -56,7 +54,7 @@ export default function ExamDetailPage() {
   const [selectedTopic, setSelectedTopic] = useState('all')
   const [selectedResult, setSelectedResult] = useState('all')
   const [showCorrectAnswers, setShowCorrectAnswers] = useState(true)
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
+
 
   useEffect(() => {
     const history = getExamHistory()
@@ -476,11 +474,11 @@ export default function ExamDetailPage() {
                         </CardTitle>
                         
                         {question.note && (
-                          <Alert className="mb-4">
-                            <AlertDescription className="font-medium">
+                          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <p className="font-medium text-blue-800 dark:text-blue-200">
                               {question.note}
-                            </AlertDescription>
-                          </Alert>
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
