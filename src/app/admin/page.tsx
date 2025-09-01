@@ -35,11 +35,19 @@ export default function AdminPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [saving, setSaving] = useState(false)
   const [modifications, setModifications] = useState<Set<number>>(new Set())
+  const [isClient, setIsClient] = useState(false)
+  
+  // Ensure we're on the client side
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
   
   const questionsPerPage = 10
 
   // Load questions on mount
   useEffect(() => {
+    if (!isClient) return // Wait for client-side hydration
+    
     async function loadData() {
       try {
         const response = await fetch('/api/questions')
@@ -47,19 +55,37 @@ export default function AdminPage() {
         
         // Apply any existing modifications from storage
         const rawQuestions = data.questions || []
-        const modifiedQuestions = applyQuestionModifications(rawQuestions)
+        console.log('Loading admin data:', {
+          rawCount: rawQuestions.length,
+          hasSupabase: true
+        })
+        
+        const modifiedQuestions = await applyQuestionModifications(rawQuestions)
+        const stats = await questionStorage.getStatistics()
+        
+        console.log('After applying modifications:', {
+          modifiedCount: modifiedQuestions.length,
+          stats,
+          sampleModified: modifiedQuestions.slice(0, 2).map(q => ({ 
+            id: q.id, 
+            correctAnswers: q.correctAnswers
+          }))
+        })
         
         setQuestions(modifiedQuestions)
         setTopics([{ name: 'all', questionCount: modifiedQuestions.length || 0 }, ...(data.topics || [])])
         
         // Track which questions have been modified
         const modifiedIds = new Set<number>()
-        rawQuestions.forEach((q: Question) => {
-          if (isQuestionModified(q.id)) {
+        for (const q of rawQuestions) {
+          const isModified = await isQuestionModified(q.id)
+          if (isModified) {
             modifiedIds.add(q.id)
           }
-        })
+        }
         setModifications(modifiedIds)
+        
+        console.log('Modified question IDs:', Array.from(modifiedIds))
         
       } catch (error) {
         console.error('Failed to load questions:', error)
@@ -68,7 +94,7 @@ export default function AdminPage() {
       }
     }
     loadData()
-  }, [])
+  }, [isClient])
 
   // Filter questions based on topic and search
   const filteredQuestions = questions.filter(q => {
@@ -95,6 +121,12 @@ export default function AdminPage() {
     
     setSaving(true)
     try {
+      console.log('Saving question:', {
+        id: editingQuestion.id,
+        correctAnswers: editingQuestion.correctAnswers,
+        optionCount: editingQuestion.options.length
+      })
+      
       const response = await fetch('/api/questions/update', {
         method: 'PUT',
         headers: {
@@ -109,8 +141,18 @@ export default function AdminPage() {
         throw new Error(result.error || 'Failed to save question')
       }
       
-      // Save to client-side storage
-      saveQuestionModification(editingQuestion)
+      // Save to Supabase storage
+      console.log('Before Supabase save')
+      
+      await saveQuestionModification(editingQuestion)
+      
+      const newStats = await questionStorage.getStatistics()
+      const isModified = await isQuestionModified(editingQuestion.id)
+      
+      console.log('After Supabase save:', {
+        newStats,
+        isModified
+      })
       
       // Update local state
       setQuestions(prev => 
@@ -123,7 +165,8 @@ export default function AdminPage() {
       setEditingQuestion(null)
       
       // Show success message
-      console.log('Question updated successfully and saved to local storage')
+      console.log('Question updated successfully and saved to Supabase')
+      alert('Question saved successfully! Changes are now persistent in the database.')
     } catch (error) {
       console.error('Failed to save question:', error)
       alert('Failed to save question. Please try again.')
@@ -156,9 +199,9 @@ export default function AdminPage() {
     })
   }
 
-  const handleExportModifications = () => {
+  const handleExportModifications = async () => {
     try {
-      const exportData = questionStorage.exportModifications()
+      const exportData = await questionStorage.exportModifications()
       const blob = new Blob([exportData], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -184,7 +227,7 @@ export default function AdminPage() {
       
       try {
         const text = await file.text()
-        const success = questionStorage.importModifications(text)
+        const success = await questionStorage.importModifications(text)
         
         if (success) {
           // Reload data with new modifications
@@ -200,10 +243,29 @@ export default function AdminPage() {
     input.click()
   }
 
-  const handleResetModifications = () => {
+  const handleResetModifications = async () => {
     if (confirm('Are you sure you want to reset all modifications? This action cannot be undone.')) {
-      questionStorage.clearModifications()
+      await questionStorage.clearModifications()
       window.location.reload()
+    }
+  }
+
+  // Debug function to test Supabase
+  const testLocalStorage = async () => {
+    try {
+      console.log('Testing Supabase connection...')
+      
+      // Test questionStorage
+      const stats = await questionStorage.getStatistics()
+      console.log('Question storage stats:', stats)
+      
+      const modifications = await questionStorage.getModifications()
+      console.log('Current modifications:', modifications)
+      
+      alert(`Supabase connection successful! Storage type: ${stats.storageType}. Check console for details.`)
+    } catch (error) {
+      console.error('Supabase test failed:', error)
+      alert('Supabase test failed: ' + error.message)
     }
   }
 
@@ -283,6 +345,15 @@ export default function AdminPage() {
                     Reset
                   </Button>
                 )}
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={testLocalStorage}
+                  className="hover:bg-purple-50 text-purple-600 border-purple-300"
+                >
+                  Test DB
+                </Button>
               </div>
             </div>
           </div>
@@ -323,6 +394,27 @@ export default function AdminPage() {
             </div>
           </div>
         </div>
+
+        {/* Debug Info Section (only show when there are modifications or in dev) */}
+        {(modifications.size > 0 || process.env.NODE_ENV === 'development') && (
+          <div className="mb-6">
+            <Card className="glass-card">
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <strong>Storage Status:</strong> Supabase Database
+                  </div>
+                  <div>
+                    <strong>Modifications:</strong> {modifications.size}
+                  </div>
+                  <div>
+                    <strong>Client Ready:</strong> {isClient ? 'Yes' : 'No'}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Questions List */}
         <div className="space-y-6">

@@ -131,7 +131,7 @@ export async function loadQuestionsFromFile(): Promise<{ questions: Question[], 
     // Apply client-side modifications if available
     if (typeof window !== 'undefined' && data.enableClientStorage) {
       const { applyQuestionModifications } = await import('./questionStorage')
-      const modifiedQuestions = applyQuestionModifications(data.questions)
+      const modifiedQuestions = await applyQuestionModifications(data.questions)
       return {
         questions: modifiedQuestions,
         topics: data.topics

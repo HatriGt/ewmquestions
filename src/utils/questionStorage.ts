@@ -1,7 +1,5 @@
 import { Question, QuestionOption } from '@/types/questions'
-
-const STORAGE_KEY = 'sap_ewm_question_modifications'
-const STORAGE_VERSION = '1.0.0'
+import { supabase, QuestionModificationRow, QuestionModificationInsert } from '@/lib/supabase'
 
 interface QuestionModification {
   questionId: number
@@ -10,152 +8,155 @@ interface QuestionModification {
   lastModified: Date
 }
 
-interface StorageData {
-  version: string
-  modifications: Record<number, QuestionModification>
-  lastSync: Date
-}
-
 /**
- * Client-side storage manager for question modifications
- * Uses localStorage for persistence across browser sessions
+ * Supabase-based storage manager for question modifications
+ * Provides persistent storage across sessions and devices
  */
 export class QuestionStorageManager {
-  private storage: Storage | null = null
-
-  constructor() {
-    // Initialize storage only on client-side
-    if (typeof window !== 'undefined') {
-      this.storage = window.localStorage
-    }
-  }
-
   /**
-   * Check if storage is available
+   * Save a question modification to Supabase
    */
-  private isStorageAvailable(): boolean {
-    return this.storage !== null
-  }
-
-  /**
-   * Get all stored modifications
-   */
-  getModifications(): Record<number, QuestionModification> {
-    if (!this.isStorageAvailable()) {
-      console.warn('Storage not available, returning empty modifications')
-      return {}
-    }
-
+  async saveModification(questionId: number, correctAnswers: string[], options: QuestionOption[]): Promise<void> {
     try {
-      const data = this.storage!.getItem(STORAGE_KEY)
-      if (!data) return {}
-
-      const parsed: StorageData = JSON.parse(data)
-      
-      // Check version compatibility
-      if (parsed.version !== STORAGE_VERSION) {
-        console.warn('Storage version mismatch, clearing modifications')
-        this.clearModifications()
-        return {}
+      const modificationData: QuestionModificationInsert = {
+        question_id: questionId,
+        correct_answers: correctAnswers,
+        options: options
       }
 
-      return parsed.modifications || {}
+      const { error } = await supabase
+        .from('question_modifications')
+        .upsert(modificationData, {
+          onConflict: 'question_id',
+          ignoreDuplicates: false
+        })
+
+      if (error) {
+        throw error
+      }
+
+      console.log(`Saved modification for question ${questionId} to Supabase`)
     } catch (error) {
-      console.error('Error reading modifications from storage:', error)
-      return {}
-    }
-  }
-
-  /**
-   * Save a question modification
-   */
-  saveModification(questionId: number, correctAnswers: string[], options: QuestionOption[]): void {
-    if (!this.isStorageAvailable()) {
-      console.warn('Storage not available, modification not saved')
-      return
-    }
-
-    try {
-      const modifications = this.getModifications()
-      
-      modifications[questionId] = {
-        questionId,
-        correctAnswers: [...correctAnswers],
-        options: options.map(opt => ({ ...opt })),
-        lastModified: new Date()
-      }
-
-      const storageData: StorageData = {
-        version: STORAGE_VERSION,
-        modifications,
-        lastSync: new Date()
-      }
-
-      this.storage!.setItem(STORAGE_KEY, JSON.stringify(storageData))
-      console.log(`Saved modification for question ${questionId}`)
-    } catch (error) {
-      console.error('Error saving modification:', error)
+      console.error('Error saving modification to Supabase:', error)
       throw new Error('Failed to save question modification')
+    }
+  }
+
+  /**
+   * Get all stored modifications from Supabase
+   */
+  async getModifications(): Promise<Record<number, QuestionModification>> {
+    try {
+      const { data, error } = await supabase
+        .from('question_modifications')
+        .select('*')
+
+      if (error) {
+        throw error
+      }
+
+      const modifications: Record<number, QuestionModification> = {}
+      
+      data?.forEach((row: QuestionModificationRow) => {
+        modifications[row.question_id] = {
+          questionId: row.question_id,
+          correctAnswers: row.correct_answers,
+          options: row.options as QuestionOption[],
+          lastModified: new Date(row.updated_at || row.created_at || '')
+        }
+      })
+
+      return modifications
+    } catch (error) {
+      console.error('Error reading modifications from Supabase:', error)
+      return {}
     }
   }
 
   /**
    * Get modification for a specific question
    */
-  getModification(questionId: number): QuestionModification | null {
-    const modifications = this.getModifications()
-    return modifications[questionId] || null
+  async getModification(questionId: number): Promise<QuestionModification | null> {
+    try {
+      const { data, error } = await supabase
+        .from('question_modifications')
+        .select('*')
+        .eq('question_id', questionId)
+        .single()
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No rows found
+          return null
+        }
+        throw error
+      }
+
+      return {
+        questionId: data.question_id,
+        correctAnswers: data.correct_answers,
+        options: data.options as QuestionOption[],
+        lastModified: new Date(data.updated_at || data.created_at || '')
+      }
+    } catch (error) {
+      console.error('Error getting modification from Supabase:', error)
+      return null
+    }
   }
 
   /**
    * Check if a question has been modified
    */
-  isModified(questionId: number): boolean {
-    return this.getModification(questionId) !== null
+  async isModified(questionId: number): Promise<boolean> {
+    const modification = await this.getModification(questionId)
+    return modification !== null
   }
 
   /**
    * Remove a specific modification
    */
-  removeModification(questionId: number): void {
-    if (!this.isStorageAvailable()) return
-
+  async removeModification(questionId: number): Promise<void> {
     try {
-      const modifications = this.getModifications()
-      delete modifications[questionId]
+      const { error } = await supabase
+        .from('question_modifications')
+        .delete()
+        .eq('question_id', questionId)
 
-      const storageData: StorageData = {
-        version: STORAGE_VERSION,
-        modifications,
-        lastSync: new Date()
+      if (error) {
+        throw error
       }
 
-      this.storage!.setItem(STORAGE_KEY, JSON.stringify(storageData))
-      console.log(`Removed modification for question ${questionId}`)
+      console.log(`Removed modification for question ${questionId} from Supabase`)
     } catch (error) {
-      console.error('Error removing modification:', error)
+      console.error('Error removing modification from Supabase:', error)
     }
   }
 
   /**
    * Clear all modifications
    */
-  clearModifications(): void {
-    if (!this.isStorageAvailable()) return
-
+  async clearModifications(): Promise<void> {
     try {
-      this.storage!.removeItem(STORAGE_KEY)
-      console.log('Cleared all modifications')
+      const { error } = await supabase
+        .from('question_modifications')
+        .delete()
+        .neq('id', 0) // Delete all rows
+
+      if (error) {
+        throw error
+      }
+
+      console.log('Cleared all modifications from Supabase')
     } catch (error) {
-      console.error('Error clearing modifications:', error)
+      console.error('Error clearing modifications from Supabase:', error)
     }
   }
 
   /**
    * Apply modifications to a list of questions
    */
-  applyModifications(questions: Question[]): Question[] {
-    const modifications = this.getModifications()
+  async applyModifications(questions: Question[]): Promise<Question[]> {
+    const modifications = await this.getModifications()
     
     return questions.map(question => {
       const modification = modifications[question.id]
@@ -179,43 +180,46 @@ export class QuestionStorageManager {
   /**
    * Export modifications as JSON
    */
-  exportModifications(): string {
-    const storageData: StorageData = {
-      version: STORAGE_VERSION,
-      modifications: this.getModifications(),
-      lastSync: new Date()
+  async exportModifications(): Promise<string> {
+    const modifications = await this.getModifications()
+    
+    const exportData = {
+      version: '2.0.0', // Increment version for Supabase
+      modifications,
+      lastSync: new Date(),
+      source: 'supabase'
     }
 
-    return JSON.stringify(storageData, null, 2)
+    return JSON.stringify(exportData, null, 2)
   }
 
   /**
    * Import modifications from JSON
    */
-  importModifications(jsonData: string): boolean {
-    if (!this.isStorageAvailable()) {
-      console.warn('Storage not available, cannot import modifications')
-      return false
-    }
-
+  async importModifications(jsonData: string): Promise<boolean> {
     try {
-      const data: StorageData = JSON.parse(jsonData)
+      const data = JSON.parse(jsonData)
       
       // Validate structure
-      if (!data.version || !data.modifications) {
-        throw new Error('Invalid data structure')
+      if (!data.modifications) {
+        throw new Error('Invalid data structure: missing modifications')
       }
 
-      // Check version compatibility
-      if (data.version !== STORAGE_VERSION) {
-        console.warn('Version mismatch during import, proceeding with caution')
+      // Import each modification
+      const modifications = Object.values(data.modifications) as QuestionModification[]
+      
+      for (const mod of modifications) {
+        await this.saveModification(
+          mod.questionId,
+          mod.correctAnswers,
+          mod.options
+        )
       }
 
-      this.storage!.setItem(STORAGE_KEY, JSON.stringify(data))
-      console.log(`Imported ${Object.keys(data.modifications).length} modifications`)
+      console.log(`Imported ${modifications.length} modifications to Supabase`)
       return true
     } catch (error) {
-      console.error('Error importing modifications:', error)
+      console.error('Error importing modifications to Supabase:', error)
       return false
     }
   }
@@ -223,51 +227,43 @@ export class QuestionStorageManager {
   /**
    * Get statistics about modifications
    */
-  getStatistics(): {
+  async getStatistics(): Promise<{
     totalModifications: number
     lastModified: Date | null
-    storageSize: string
-  } {
-    const modifications = this.getModifications()
-    const modificationCount = Object.keys(modifications).length
-    
-    let lastModified: Date | null = null
-    Object.values(modifications).forEach(mod => {
-      const modDate = new Date(mod.lastModified)
-      if (!lastModified || modDate > lastModified) {
-        lastModified = modDate
-      }
-    })
+    storageType: string
+  }> {
+    try {
+      const { data, error } = await supabase
+        .from('question_modifications')
+        .select('updated_at, created_at')
 
-    let storageSize = '0 B'
-    if (this.isStorageAvailable()) {
-      try {
-        const data = this.storage!.getItem(STORAGE_KEY)
-        if (data) {
-          const bytes = new Blob([data]).size
-          storageSize = this.formatBytes(bytes)
+      if (error) {
+        throw error
+      }
+
+      const modificationCount = data?.length || 0
+      
+      let lastModified: Date | null = null
+      data?.forEach(row => {
+        const modDate = new Date(row.updated_at || row.created_at)
+        if (!lastModified || modDate > lastModified) {
+          lastModified = modDate
         }
-      } catch (error) {
-        console.error('Error calculating storage size:', error)
+      })
+
+      return {
+        totalModifications: modificationCount,
+        lastModified,
+        storageType: 'Supabase Database'
+      }
+    } catch (error) {
+      console.error('Error getting statistics from Supabase:', error)
+      return {
+        totalModifications: 0,
+        lastModified: null,
+        storageType: 'Supabase Database (Error)'
       }
     }
-
-    return {
-      totalModifications: modificationCount,
-      lastModified,
-      storageSize
-    }
-  }
-
-  /**
-   * Format bytes to human readable string
-   */
-  private formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i]
   }
 }
 
@@ -275,18 +271,18 @@ export class QuestionStorageManager {
 export const questionStorage = new QuestionStorageManager()
 
 // Export utility functions
-export const applyQuestionModifications = (questions: Question[]): Question[] => {
-  return questionStorage.applyModifications(questions)
+export const applyQuestionModifications = async (questions: Question[]): Promise<Question[]> => {
+  return await questionStorage.applyModifications(questions)
 }
 
-export const saveQuestionModification = (question: Question): void => {
-  questionStorage.saveModification(
+export const saveQuestionModification = async (question: Question): Promise<void> => {
+  await questionStorage.saveModification(
     question.id,
     question.correctAnswers,
     question.options
   )
 }
 
-export const isQuestionModified = (questionId: number): boolean => {
-  return questionStorage.isModified(questionId)
+export const isQuestionModified = async (questionId: number): Promise<boolean> => {
+  return await questionStorage.isModified(questionId)
 }
