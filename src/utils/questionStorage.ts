@@ -1,5 +1,8 @@
 import { Question, QuestionOption } from '@/types/questions'
-import { supabase, QuestionModificationRow, QuestionModificationInsert } from '@/lib/supabase'
+import { QuestionModificationRow, QuestionModificationInsert } from '@/lib/supabase'
+
+// Edge Function base URL
+const EDGE_FUNCTION_BASE_URL = 'https://tftiznxajayvfripufdy.supabase.co/functions/v1/-question-modifications-proxy'
 
 interface QuestionModification {
   questionId: number
@@ -9,12 +12,12 @@ interface QuestionModification {
 }
 
 /**
- * Supabase-based storage manager for question modifications
- * Provides persistent storage across sessions and devices
+ * Edge Function-based storage manager for question modifications
+ * Provides persistent storage across sessions and devices without CORS issues
  */
 export class QuestionStorageManager {
   /**
-   * Save a question modification to Supabase
+   * Save a question modification via Edge Function
    */
   async saveModification(questionId: number, correctAnswers: string[], options: QuestionOption[]): Promise<void> {
     try {
@@ -24,37 +27,39 @@ export class QuestionStorageManager {
         options: options
       }
 
-      const { error } = await supabase
-        .from('question_modifications')
-        .upsert(modificationData, {
-          onConflict: 'question_id',
-          ignoreDuplicates: false
-        })
+      const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/question-modifications`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(modificationData)
+      })
 
-      if (error) {
-        throw error
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
-      console.log(`Saved modification for question ${questionId} to Supabase`)
+      console.log(`Saved modification for question ${questionId} via Edge Function`)
     } catch (error) {
-      console.error('Error saving modification to Supabase:', error)
+      console.error('Error saving modification via Edge Function:', error)
       throw new Error('Failed to save question modification')
     }
   }
 
   /**
-   * Get all stored modifications from Supabase
+   * Get all stored modifications via Edge Function
    */
   async getModifications(): Promise<Record<number, QuestionModification>> {
     try {
-      const { data, error } = await supabase
-        .from('question_modifications')
-        .select('*')
-
-      if (error) {
-        throw error
+      const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/question-modifications`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
+      const data: QuestionModificationRow[] = await response.json()
       const modifications: Record<number, QuestionModification> = {}
       
       data?.forEach((row: QuestionModificationRow) => {
@@ -68,29 +73,29 @@ export class QuestionStorageManager {
 
       return modifications
     } catch (error) {
-      console.error('Error reading modifications from Supabase:', error)
+      console.error('Error reading modifications via Edge Function:', error)
       return {}
     }
   }
 
   /**
-   * Get modification for a specific question
+   * Get modification for a specific question via Edge Function
    */
   async getModification(questionId: number): Promise<QuestionModification | null> {
     try {
-      const { data, error } = await supabase
-        .from('question_modifications')
-        .select('*')
-        .eq('question_id', questionId)
-        .single()
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No rows found
+      const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/question-modifications/question/${questionId}`)
+      
+      if (!response.ok) {
+        if (response.status === 404) {
           return null
         }
-        throw error
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP ${response.status}`)
       }
+
+      const data: QuestionModificationRow = await response.json()
+      
+      if (!data) return null
 
       return {
         questionId: data.question_id,
@@ -99,7 +104,7 @@ export class QuestionStorageManager {
         lastModified: new Date(data.updated_at || data.created_at || '')
       }
     } catch (error) {
-      console.error('Error getting modification from Supabase:', error)
+      console.error('Error getting modification via Edge Function:', error)
       return null
     }
   }
@@ -113,42 +118,60 @@ export class QuestionStorageManager {
   }
 
   /**
-   * Remove a specific modification
+   * Remove a specific modification via Edge Function
    */
   async removeModification(questionId: number): Promise<void> {
     try {
-      const { error } = await supabase
-        .from('question_modifications')
-        .delete()
-        .eq('question_id', questionId)
-
-      if (error) {
-        throw error
+      // First get the modification to find its ID
+      const modification = await this.getModification(questionId)
+      if (!modification) {
+        console.log(`No modification found for question ${questionId}`)
+        return
       }
 
-      console.log(`Removed modification for question ${questionId} from Supabase`)
+      // Get all modifications to find the one with this question_id
+      const allMods = await this.getModifications()
+      const modRow = Object.values(allMods).find(mod => mod.questionId === questionId)
+      
+      if (!modRow) {
+        console.log(`No modification row found for question ${questionId}`)
+        return
+      }
+
+      // For now, we'll use a workaround since the Edge Function expects ID-based deletion
+      // We'll clear and recreate the data without this modification
+      const { [questionId]: removed, ...remainingMods } = allMods
+      
+      // Clear all and recreate remaining ones
+      await this.clearModifications()
+      
+      // Recreate remaining modifications
+      for (const mod of Object.values(remainingMods)) {
+        await this.saveModification(mod.questionId, mod.correctAnswers, mod.options)
+      }
+
+      console.log(`Removed modification for question ${questionId} via Edge Function`)
     } catch (error) {
-      console.error('Error removing modification from Supabase:', error)
+      console.error('Error removing modification via Edge Function:', error)
     }
   }
 
   /**
-   * Clear all modifications
+   * Clear all modifications via Edge Function
    */
   async clearModifications(): Promise<void> {
     try {
-      const { error } = await supabase
-        .from('question_modifications')
-        .delete()
-        .neq('id', 0) // Delete all rows
-
-      if (error) {
-        throw error
+      // Get all modifications first
+      const allMods = await this.getModifications()
+      
+      // Delete each modification individually since we don't have a bulk delete endpoint
+      for (const questionId of Object.keys(allMods)) {
+        await this.removeModification(parseInt(questionId))
       }
 
-      console.log('Cleared all modifications from Supabase')
+      console.log('Cleared all modifications via Edge Function')
     } catch (error) {
-      console.error('Error clearing modifications from Supabase:', error)
+      console.error('Error clearing modifications via Edge Function:', error)
     }
   }
 
@@ -184,10 +207,10 @@ export class QuestionStorageManager {
     const modifications = await this.getModifications()
     
     const exportData = {
-      version: '2.0.0', // Increment version for Supabase
+      version: '2.0.0', // Increment version for Edge Function
       modifications,
       lastSync: new Date(),
-      source: 'supabase'
+      source: 'edge-function'
     }
 
     return JSON.stringify(exportData, null, 2)
@@ -216,16 +239,16 @@ export class QuestionStorageManager {
         )
       }
 
-      console.log(`Imported ${modifications.length} modifications to Supabase`)
+      console.log(`Imported ${modifications.length} modifications via Edge Function`)
       return true
     } catch (error) {
-      console.error('Error importing modifications to Supabase:', error)
+      console.error('Error importing modifications via Edge Function:', error)
       return false
     }
   }
 
   /**
-   * Get statistics about modifications
+   * Get statistics about modifications via Edge Function
    */
   async getStatistics(): Promise<{
     totalModifications: number
@@ -233,35 +256,27 @@ export class QuestionStorageManager {
     storageType: string
   }> {
     try {
-      const { data, error } = await supabase
-        .from('question_modifications')
-        .select('updated_at, created_at')
-
-      if (error) {
-        throw error
-      }
-
-      const modificationCount = data?.length || 0
+      const data = await this.getModifications()
+      const modificationCount = Object.keys(data).length
       
       let lastModified: Date | null = null
-      data?.forEach(row => {
-        const modDate = new Date(row.updated_at || row.created_at)
-        if (!lastModified || modDate > lastModified) {
-          lastModified = modDate
+      Object.values(data).forEach(mod => {
+        if (!lastModified || mod.lastModified > lastModified) {
+          lastModified = mod.lastModified
         }
       })
 
       return {
         totalModifications: modificationCount,
         lastModified,
-        storageType: 'Supabase Database'
+        storageType: 'Edge Function (CORS-Free)'
       }
     } catch (error) {
-      console.error('Error getting statistics from Supabase:', error)
+      console.error('Error getting statistics via Edge Function:', error)
       return {
         totalModifications: 0,
         lastModified: null,
-        storageType: 'Supabase Database (Error)'
+        storageType: 'Edge Function (Error)'
       }
     }
   }

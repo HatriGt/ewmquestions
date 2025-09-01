@@ -255,23 +255,23 @@ export default function AdminPage() {
     }
   }
 
-  // Debug function to test Supabase
-  const testLocalStorage = async () => {
+  // Debug function to test Edge Function
+  const testEdgeFunction = async () => {
     try {
-      console.log('Testing Supabase connection...')
+      console.log('Testing Edge Function connection...')
       
       // Test questionStorage
       const stats = await questionStorage.getStatistics()
-      console.log('Question storage stats:', stats)
+      console.log('Edge Function stats:', stats)
       
       const modifications = await questionStorage.getModifications()
       console.log('Current modifications:', modifications)
       
-      alert(`Supabase connection successful! Storage type: ${stats.storageType}. Check console for details.`)
+      alert(`Edge Function connection successful! Storage type: ${stats.storageType}. Check console for details.`)
     } catch (error) {
-      console.error('Supabase test failed:', error)
+      console.error('Edge Function test failed:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      alert('Supabase test failed: ' + errorMessage)
+      alert('Edge Function test failed: ' + errorMessage)
     }
   }
 
@@ -355,10 +355,10 @@ export default function AdminPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={testLocalStorage}
+                  onClick={testEdgeFunction}
                   className="hover:bg-purple-50 text-purple-600 border-purple-300"
                 >
-                  Test DB
+                  Test Edge Function
                 </Button>
               </div>
             </div>
