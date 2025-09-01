@@ -1,20 +1,8 @@
 import { Question, QuestionOption } from '@/types/questions'
 import { QuestionModificationRow, QuestionModificationInsert } from '@/lib/supabase'
 
-// Edge Function base URL
-const EDGE_FUNCTION_BASE_URL = 'https://tftiznxajayvfripufdy.supabase.co/functions/v1/-question-modifications-proxy'
-
-// Get Supabase anon key for authentication
-const getSupabaseAnonKey = () => {
-  // Import the anon key from the supabase config
-  try {
-    // This will work in the browser since it's a NEXT_PUBLIC variable
-    return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  } catch (error) {
-    console.warn('Could not get Supabase anon key:', error)
-    return undefined
-  }
-}
+// API base URL - using local API routes that proxy to Edge Functions
+const API_BASE_URL = '/api/question-modifications'
 
 interface QuestionModification {
   questionId: number
@@ -24,12 +12,13 @@ interface QuestionModification {
 }
 
 /**
- * Edge Function-based storage manager for question modifications
+ * API proxy-based storage manager for question modifications
+ * Uses Next.js API routes that proxy to Supabase Edge Functions
  * Provides persistent storage across sessions and devices without CORS issues
  */
 export class QuestionStorageManager {
   /**
-   * Save a question modification via Edge Function
+   * Save a question modification via API proxy
    */
   async saveModification(questionId: number, correctAnswers: string[], options: QuestionOption[]): Promise<void> {
     try {
@@ -39,7 +28,7 @@ export class QuestionStorageManager {
         options: options
       }
 
-      const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/question-modifications`, {
+      const response = await fetch(API_BASE_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -48,26 +37,26 @@ export class QuestionStorageManager {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
-      console.log(`Saved modification for question ${questionId} via Edge Function`)
+      console.log(`Saved modification for question ${questionId} via API proxy`)
     } catch (error) {
-      console.error('Error saving modification via Edge Function:', error)
+      console.error('Error saving modification via API proxy:', error)
       throw new Error('Failed to save question modification')
     }
   }
 
   /**
-   * Get all stored modifications via Edge Function
+   * Get all stored modifications via API proxy
    */
   async getModifications(): Promise<Record<number, QuestionModification>> {
     try {
-      const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/question-modifications`)
+      const response = await fetch(API_BASE_URL)
       
       if (!response.ok) {
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
@@ -85,23 +74,23 @@ export class QuestionStorageManager {
 
       return modifications
     } catch (error) {
-      console.error('Error reading modifications via Edge Function:', error)
+      console.error('Error reading modifications via API proxy:', error)
       return {}
     }
   }
 
   /**
-   * Get modification for a specific question via Edge Function
+   * Get modification for a specific question via API proxy
    */
   async getModification(questionId: number): Promise<QuestionModification | null> {
     try {
-      const response = await fetch(`${EDGE_FUNCTION_BASE_URL}/question-modifications/question/${questionId}`)
+      const response = await fetch(`${API_BASE_URL}?questionId=${questionId}`)
       
       if (!response.ok) {
         if (response.status === 404) {
           return null
         }
-        const errorData = await response.json()
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
@@ -116,7 +105,7 @@ export class QuestionStorageManager {
         lastModified: new Date(data.updated_at || data.created_at || '')
       }
     } catch (error) {
-      console.error('Error getting modification via Edge Function:', error)
+      console.error('Error getting modification via API proxy:', error)
       return null
     }
   }
@@ -130,60 +119,48 @@ export class QuestionStorageManager {
   }
 
   /**
-   * Remove a specific modification via Edge Function
+   * Remove a specific modification via API proxy
    */
   async removeModification(questionId: number): Promise<void> {
     try {
-      // First get the modification to find its ID
-      const modification = await this.getModification(questionId)
-      if (!modification) {
-        console.log(`No modification found for question ${questionId}`)
-        return
+      const response = await fetch(`${API_BASE_URL}?questionId=${questionId}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log(`No modification found for question ${questionId}`)
+          return
+        }
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
-      // Get all modifications to find the one with this question_id
-      const allMods = await this.getModifications()
-      const modRow = Object.values(allMods).find(mod => mod.questionId === questionId)
-      
-      if (!modRow) {
-        console.log(`No modification row found for question ${questionId}`)
-        return
-      }
-
-      // For now, we'll use a workaround since the Edge Function expects ID-based deletion
-      // We'll clear and recreate the data without this modification
-      const { [questionId]: removed, ...remainingMods } = allMods
-      
-      // Clear all and recreate remaining ones
-      await this.clearModifications()
-      
-      // Recreate remaining modifications
-      for (const mod of Object.values(remainingMods)) {
-        await this.saveModification(mod.questionId, mod.correctAnswers, mod.options)
-      }
-
-      console.log(`Removed modification for question ${questionId} via Edge Function`)
+      console.log(`Removed modification for question ${questionId} via API proxy`)
     } catch (error) {
-      console.error('Error removing modification via Edge Function:', error)
+      console.error('Error removing modification via API proxy:', error)
+      throw error
     }
   }
 
   /**
-   * Clear all modifications via Edge Function
+   * Clear all modifications via API proxy
    */
   async clearModifications(): Promise<void> {
     try {
-      // Get all modifications first
-      const allMods = await this.getModifications()
-      
-      // Delete each modification individually since we don't have a bulk delete endpoint
-      for (const questionId of Object.keys(allMods)) {
-        await this.removeModification(parseInt(questionId))
+      const response = await fetch(API_BASE_URL, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
       }
 
-      console.log('Cleared all modifications via Edge Function')
+      console.log('Cleared all modifications via API proxy')
     } catch (error) {
-      console.error('Error clearing modifications via Edge Function:', error)
+      console.error('Error clearing modifications via API proxy:', error)
+      throw error
     }
   }
 
@@ -219,10 +196,10 @@ export class QuestionStorageManager {
     const modifications = await this.getModifications()
     
     const exportData = {
-      version: '2.0.0', // Increment version for Edge Function
+      version: '3.0.0', // Updated version for API proxy architecture
       modifications,
       lastSync: new Date(),
-      source: 'edge-function'
+      source: 'api-proxy-edge-functions'
     }
 
     return JSON.stringify(exportData, null, 2)
@@ -251,16 +228,16 @@ export class QuestionStorageManager {
         )
       }
 
-      console.log(`Imported ${modifications.length} modifications via Edge Function`)
+      console.log(`Imported ${modifications.length} modifications via API proxy`)
       return true
     } catch (error) {
-      console.error('Error importing modifications via Edge Function:', error)
+      console.error('Error importing modifications via API proxy:', error)
       return false
     }
   }
 
   /**
-   * Get statistics about modifications via Edge Function
+   * Get statistics about modifications via API proxy
    */
   async getStatistics(): Promise<{
     totalModifications: number
@@ -281,14 +258,14 @@ export class QuestionStorageManager {
       return {
         totalModifications: modificationCount,
         lastModified,
-        storageType: 'Edge Function (CORS-Free)'
+        storageType: 'API Proxy to Edge Functions'
       }
     } catch (error) {
-      console.error('Error getting statistics via Edge Function:', error)
+      console.error('Error getting statistics via API proxy:', error)
       return {
         totalModifications: 0,
         lastModified: null,
-        storageType: 'Edge Function (Error)'
+        storageType: 'API Proxy (Error)'
       }
     }
   }
